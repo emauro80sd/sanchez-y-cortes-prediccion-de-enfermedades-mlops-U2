@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reporte de predicciones</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
+</head>
+<body>
+{% set clases = {'NO ENFERMO': 'sano', 'ENFERMEDAD LEVE': 'leve', 'ENFERMEDAD AGUDA': 'aguda', 'ENFERMEDAD CRÓNICA': 'cronica', 'ENFERMEDAD TERMINAL': 'terminal'} %}
+<header class="encabezado">
+  <div class="contenedor">
+    <nav class="navegacion" aria-label="Navegación principal">
+      <a href="{{ url_for('inicio') }}">Predicción</a>
+      <a href="{{ url_for('reporte') }}" class="activo" aria-current="page">Reporte de predicciones</a>
+    </nav>
+    <h1>Reporte de predicciones</h1>
+    <p>Estadísticas de todas las predicciones realizadas por el modelo (servicio versión {{ version }}).</p>
+  </div>
+</header>
+
+<main class="contenedor">
+  <section class="indicadores">
+    <div class="tarjeta indicador">
+      <p class="indicador-etiqueta">Total de predicciones</p>
+      <p class="indicador-valor">{{ reporte.total_predicciones }}</p>
+    </div>
+    <div class="tarjeta indicador">
+      <p class="indicador-etiqueta">Fecha de la última predicción</p>
+      <p class="indicador-valor indicador-fecha">
+        {% if reporte.fecha_ultima_prediccion %}
+          {{ reporte.fecha_ultima_prediccion.replace('T', ' ').replace('+00:00', ' UTC') }}
+        {% else %}
+          Sin predicciones
+        {% endif %}
+      </p>
+    </div>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Predicciones por categoría</h2>
+    <table class="detalle">
+      <thead><tr><th>Categoría</th><th>Cantidad</th><th class="col-barra">Proporción</th></tr></thead>
+      <tbody>
+        {% for estado in estados %}
+          {% set cantidad = reporte.predicciones_por_categoria.get(estado, 0) %}
+          {% set porcentaje = (100 * cantidad / reporte.total_predicciones)|round(1) if reporte.total_predicciones else 0 %}
+          <tr>
+            <td><span class="etiqueta-estado estado-{{ clases[estado] }}">{{ estado }}</span></td>
+            <td><strong>{{ cantidad }}</strong></td>
+            <td class="col-barra">
+              <div class="barra estado-{{ clases[estado] }}"><div class="barra-relleno" style="width: {{ porcentaje }}%"></div></div>
+              <span class="barra-texto">{{ porcentaje }} %</span>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Últimas {{ numero_ultimas }} predicciones</h2>
+    {% if reporte.ultimas_predicciones %}
+      <div class="tabla-desplazable">
+        <table class="detalle">
+          <thead>
+            <tr><th>Fecha (UTC)</th><th>Estado</th><th>Entrada (T · FC · SpO₂ · dolor · días)</th><th>Canal</th></tr>
+          </thead>
+          <tbody>
+            {% for p in reporte.ultimas_predicciones %}
+              {% set e = p.entrada %}
+              <tr>
+                <td>{{ p.fecha_utc.replace('T', ' ').replace('+00:00', '') }}</td>
+                <td><span class="etiqueta-estado estado-{{ clases.get(p.estado, 'leve') }}">{{ p.estado }}</span></td>
+                <td>{{ e.temperatura }} °C · {{ e.frecuencia_cardiaca }} lpm · {{ e.saturacion_oxigeno }} % · {{ e.intensidad_dolor }}/10 · {{ e.dias_sintomas }} d</td>
+                <td>{{ p.canal }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="vacio">Aún no se han realizado predicciones. Haga una en la <a href="{{ url_for('inicio') }}">página de predicción</a>.</p>
+    {% endif %}
+    {% if reporte.lineas_invalidas %}
+      <p class="meta">Se ignoraron {{ reporte.lineas_invalidas }} líneas dañadas del registro.</p>
+    {% endif %}
+  </section>
+
+  <p class="meta">El mismo reporte está disponible en formato JSON en <a href="{{ url_for('estadisticas') }}">/estadisticas</a>.</p>
+</main>
+
+<footer class="contenedor pie">
+  Simulación académica (curso MLOps, Universidad Icesi). No reemplaza el criterio médico ni sirve para diagnóstico real.
+</footer>
+</body>
+</html>

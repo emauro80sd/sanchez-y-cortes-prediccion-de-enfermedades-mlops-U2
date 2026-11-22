@@ -7,6 +7,8 @@ Rutas:
     POST /predecir    API REST: recibe JSON y retorna el estado del paciente
     GET  /predecir    API REST: igual que POST, con parámetros en la URL
     GET  /ejemplos    Datos de ejemplo que producen cada uno de los 5 estados
+    GET  /estadisticas  Reporte de estadísticas de las predicciones (JSON)
+    GET  /reporte     Reporte de estadísticas para el médico (página web)
     GET  /salud       Health check (lo usa el HEALTHCHECK del Dockerfile)
     GET  /apidocs     Documentación interactiva (Swagger UI)
 """
@@ -25,6 +27,7 @@ from typing import Any, Mapping
 from flasgger import Swagger
 from flask import Flask, jsonify, render_template, request
 
+from app.estadisticas import NUMERO_ULTIMAS, calcular_estadisticas
 from app.modelo import (
     ESTADOS,
     EJEMPLOS,
@@ -33,6 +36,17 @@ from app.modelo import (
     ErrorValidacion,
     evaluar_paciente,
 )
+
+VERSION_SERVICIO = "1.2.0"  # 1.2.0: reporte de estadísticas de las predicciones
+
+# Archivo de texto (JSON Lines) donde se exporta cada predicción.
+RUTA_REGISTRO_POR_DEFECTO = "registros/predicciones.jsonl"
+
+
+def ruta_registro() -> str:
+    """Ruta del registro de predicciones (configurable con RUTA_REGISTRO_PREDICCIONES)."""
+    return os.environ.get("RUTA_REGISTRO_PREDICCIONES") or RUTA_REGISTRO_POR_DEFECTO
+
 
 app = Flask(__name__)
 app.json.ensure_ascii = False  # muestra "CRÓNICA" y no "CRÓNICA"
@@ -46,7 +60,7 @@ app.config["SWAGGER"] = {
         "NO ENFERMO, ENFERMEDAD LEVE, ENFERMEDAD AGUDA, ENFERMEDAD CRÓNICA o ENFERMEDAD TERMINAL. "
         "Simulación académica, no apta para uso clínico real."
     ),
-    "version": VERSION_MODELO,
+    "version": VERSION_SERVICIO,
 }
 Swagger(app)
 
@@ -63,7 +77,7 @@ if not log_predicciones.handlers:
 
 
 def registrar_prediccion(resultado: dict[str, Any], canal: str) -> str:
-    """Escribe la predicción en stdout (y en un archivo JSONL si está configurado). Retorna su id."""
+    """Exporta la predicción a stdout y al archivo de registro (JSONL). Retorna su id."""
     id_prediccion = str(uuid.uuid4())
     registro = {
         "id_prediccion": id_prediccion,
@@ -77,14 +91,13 @@ def registrar_prediccion(resultado: dict[str, Any], canal: str) -> str:
     linea = json.dumps(registro, ensure_ascii=False)
     log_predicciones.info(linea)
 
-    ruta = os.environ.get("RUTA_REGISTRO_PREDICCIONES")
-    if ruta:
-        try:
-            Path(ruta).parent.mkdir(parents=True, exist_ok=True)
-            with open(ruta, "a", encoding="utf-8") as archivo:
-                archivo.write(linea + "\n")
-        except OSError as error:  # el registro nunca debe impedir la predicción
-            app.logger.warning("No se pudo escribir el registro de predicciones: %s", error)
+    ruta = ruta_registro()
+    try:
+        Path(ruta).parent.mkdir(parents=True, exist_ok=True)
+        with open(ruta, "a", encoding="utf-8") as archivo:
+            archivo.write(linea + "\n")
+    except OSError as error:  # el registro nunca debe impedir la predicción
+        app.logger.warning("No se pudo escribir el registro de predicciones: %s", error)
     return id_prediccion
 
 
@@ -243,6 +256,66 @@ def ejemplos():
     return jsonify(EJEMPLOS)
 
 
+# --------------------------------------------------------------------------
+# Reporte de estadísticas de las predicciones
+# --------------------------------------------------------------------------
+@app.get("/estadisticas")
+def estadisticas():
+    """Reporte de estadísticas de las predicciones realizadas
+    ---
+    tags:
+      - Reporte
+    responses:
+      200:
+        description: >
+          Total de predicciones por categoría, últimas 5 predicciones (la más
+          reciente primero) y fecha de la última predicción. Si aún no hay
+          predicciones, los conteos están en 0, la lista vacía y la fecha es null.
+        schema:
+          type: object
+          properties:
+            total_predicciones:
+              type: integer
+              example: 7
+            predicciones_por_categoria:
+              type: object
+              example: {"NO ENFERMO": 1, "ENFERMEDAD LEVE": 2, "ENFERMEDAD AGUDA": 2, "ENFERMEDAD CRÓNICA": 1, "ENFERMEDAD TERMINAL": 1}
+            ultimas_predicciones:
+              type: array
+              items:
+                type: object
+            fecha_ultima_prediccion:
+              type: string
+              example: "2026-11-22T15:04:05+00:00"
+            lineas_invalidas:
+              type: integer
+              example: 0
+    """
+    return jsonify(calcular_estadisticas(ruta_registro()))
+
+
+@app.get("/reporte")
+def reporte():
+    """Reporte de estadísticas en una página web para el médico
+    ---
+    tags:
+      - Reporte
+    produces:
+      - text/html
+    responses:
+      200:
+        description: Página HTML con el mismo reporte de /estadisticas
+    """
+    return render_template(
+        "reporte.html",
+        reporte=calcular_estadisticas(ruta_registro()),
+        estados=ESTADOS,
+        variables=VARIABLES,
+        numero_ultimas=NUMERO_ULTIMAS,
+        version=VERSION_SERVICIO,
+    )
+
+
 @app.get("/salud")
 def salud():
     """Health check del servicio
@@ -253,12 +326,20 @@ def salud():
       200:
         description: El servicio está funcionando
     """
-    return jsonify({"estado": "ok", "version_modelo": VERSION_MODELO, "estados_posibles": list(ESTADOS)})
+    return jsonify(
+        {
+            "estado": "ok",
+            "version_servicio": VERSION_SERVICIO,
+            "version_modelo": VERSION_MODELO,
+            "estados_posibles": list(ESTADOS),
+        }
+    )
 
 
 @app.errorhandler(404)
 def no_encontrado(_error):
-    return jsonify({"error": "Ruta no encontrada", "rutas_disponibles": ["/", "/predecir", "/ejemplos", "/salud", "/apidocs"]}), 404
+    rutas = ["/", "/predecir", "/ejemplos", "/estadisticas", "/reporte", "/salud", "/apidocs"]
+    return jsonify({"error": "Ruta no encontrada", "rutas_disponibles": rutas}), 404
 
 
 @app.errorhandler(405)

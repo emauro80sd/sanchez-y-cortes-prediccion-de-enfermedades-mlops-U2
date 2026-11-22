@@ -1,9 +1,9 @@
 # =============================================================================
 # Imagen Docker: servicio de predicción del estado de salud del paciente
 #
-# Construir:  docker build -t prediccion-enfermedades:1.1.0 .
-# Ejecutar:   docker run -d --name prediccion-enfermedades -p 5000:5000 prediccion-enfermedades:1.1.0
-# Usar:       http://localhost:5000  (web)   ·   POST http://localhost:5000/predecir  (API)
+# Construir:  docker build -t prediccion-enfermedades:1.2.0 .
+# Ejecutar:   docker run -d --name prediccion-enfermedades -p 5000:5000 prediccion-enfermedades:1.2.0
+# Usar:       http://localhost:5000 (web) · POST /predecir (API) · /reporte y /estadisticas (reporte)
 # =============================================================================
 
 # 1. Imagen base oficial y liviana de Python
@@ -12,13 +12,13 @@ FROM python:3.12-slim
 # 2. Metadatos de la imagen
 LABEL org.opencontainers.image.title="prediccion-enfermedades" \
       org.opencontainers.image.description="Modelo simulado que predice NO ENFERMO o ENFERMEDAD LEVE, AGUDA, CRÓNICA o TERMINAL" \
-      org.opencontainers.image.version="1.1.0"
+      org.opencontainers.image.version="1.2.0"
 
 # 3. Variables de entorno
 #    - PYTHONDONTWRITEBYTECODE: no genera archivos .pyc
 #    - PYTHONUNBUFFERED: los logs salen de inmediato (docker logs)
 #    - PIP_*: no guarda caché de pip y omite la verificación de versión
-#    - RUTA_REGISTRO_PREDICCIONES: archivo donde se guarda cada predicción (trazabilidad)
+#    - RUTA_REGISTRO_PREDICCIONES: archivo donde se exporta cada predicción (trazabilidad y reporte de estadísticas)
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
