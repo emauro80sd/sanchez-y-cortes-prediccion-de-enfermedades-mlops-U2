@@ -1,5 +1,7 @@
 # Predicción de enfermedades en pacientes · MLOps (Unidad 2)
 
+[![CI/CD](https://github.com/emauro80sd/sanchez-y-cortes-prediccion-de-enfermedades-mlops-U2/actions/workflows/workflow.yaml/badge.svg?branch=main)](https://github.com/emauro80sd/sanchez-y-cortes-prediccion-de-enfermedades-mlops-U2/actions/workflows/workflow.yaml)
+
 * **Integrantes:** Edgar Mauricio Sanchez Duran y Juan Camilo Cortes Jaramillo
 * **Curso:** MLOps · Maestría en Inteligencia Artificial Aplicada · Universidad Icesi
 
@@ -19,11 +21,44 @@ Este repositorio mantiene el **control de versiones** de esa solución y su evol
 
 ## Flujo de trabajo
 
-* `main` es la rama principal y contiene siempre la versión estable de la solución.
+* `main` es la rama principal y contiene siempre la versión estable de la solución. Está **protegida**: solo recibe cambios mediante pull requests, nadie puede hacer *push* directo (ni siquiera los administradores) y las pruebas unitarias deben pasar antes del merge.
 * Cada cambio se desarrolla en su propia rama y entra a `main` mediante un pull request:
-    * `solución-inicial`: archivos de la Unidad 1.
-    * Una rama por cada nuevo requerimiento de los médicos.
-    * `añadir-github-actions`: pipeline de CI/CD.
+
+| Rama | Contenido |
+|---|---|
+| `solución-inicial` | Archivos de la Unidad 1 y este README combinado (un solo commit) |
+| `nueva-prediccion-terminal` | Requerimiento 1: nueva categoría `ENFERMEDAD TERMINAL` |
+| `reporte-estadisticas` | Requerimiento 2: reporte de estadísticas de las predicciones |
+| `añadir-github-actions` | Pipeline de CI/CD con GitHub Actions |
+
+## CI/CD con GitHub Actions
+
+El pipeline está en [`.github/workflows/workflow.yaml`](.github/workflows/workflow.yaml) y responde a dos eventos.
+
+**Evento (a): cada pull request contra `main`.**
+
+1. Comenta en el PR: *«CI/CD en acción. Ejecutando tareas …»*.
+2. Corre las pruebas unitarias con `pytest` en Ubuntu con Python 3.12. Hay 56 pruebas, entre ellas:
+    * Cada uno de los **5 estados**, incluido `ENFERMEDAD TERMINAL`, se obtiene con el grupo de parámetros esperado.
+    * Las estadísticas están **vacías antes de cualquier predicción**.
+    * Después de predecir, **la última predicción del reporte es la esperada**.
+3. Si las pruebas pasan, comenta en el PR: *«CI/CD terminado con éxito.»*. Si fallan, comenta el aviso con el enlace a la ejecución.
+
+**Evento (b): cada commit en `main`** (es decir, cada merge de un PR).
+
+1. Vuelve a correr las mismas pruebas unitarias como verificación final.
+2. Construye la imagen de Docker y le hace una prueba de humo: arranca el contenedor, hace una predicción y consulta el reporte.
+3. Publica la imagen en **GitHub Packages** como [`ghcr.io/emauro80sd/prediccion-enfermedades`](https://github.com/emauro80sd/sanchez-y-cortes-prediccion-de-enfermedades-mlops-U2/pkgs/container/prediccion-enfermedades), con las etiquetas `latest`, la versión del servicio y el *sha* del commit.
+
+Para usar la imagen publicada sin construirla:
+
+```bash
+docker pull ghcr.io/emauro80sd/prediccion-enfermedades:latest
+```
+
+```bash
+docker run -d --name prediccion-enfermedades -p 5000:5000 ghcr.io/emauro80sd/prediccion-enfermedades:latest
+```
 
 > ⚠️ Proyecto académico: el modelo es una **simulación** (no es un modelo entrenado) y **no sirve como diagnóstico médico**.
 
@@ -56,6 +91,8 @@ Cada predicción se registra con un identificador único (trazabilidad). Esos re
 ```text
 .
 ├── README.md               # Este archivo
+├── .github/workflows/
+│   └── workflow.yaml       # Pipeline de CI/CD (GitHub Actions)
 ├── Dockerfile              # Instrucciones para construir la imagen
 ├── .dockerignore           # Archivos que no entran a la imagen
 ├── .gitignore              # Archivos que no se versionan
