@@ -1,0 +1,15 @@
+# Alternativa a docker build + docker run en un solo comando:
+#   docker compose up --build -d
+services:
+  prediccion:
+    build: .
+    image: prediccion-enfermedades:1.0.0
+    container_name: prediccion-enfermedades
+    ports:
+      - "5000:5000"
+    volumes:
+      - registros:/app/registros   # conserva el registro de predicciones entre reinicios
+    restart: unless-stopped
+
+volumes:
+  registros:

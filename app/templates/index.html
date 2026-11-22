@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Predicción del estado de salud</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
+</head>
+<body>
+{% set clases = {'NO ENFERMO': 'sano', 'ENFERMEDAD LEVE': 'leve', 'ENFERMEDAD AGUDA': 'aguda', 'ENFERMEDAD CRÓNICA': 'cronica'} %}
+<header class="encabezado">
+  <div class="contenedor">
+    <h1>Asistente de predicción del estado de salud</h1>
+    <p>Ingrese los datos del paciente para obtener el estado estimado por el modelo (versión {{ version }}).</p>
+  </div>
+</header>
+
+<main class="contenedor">
+  <section class="tarjeta">
+    <div class="tarjeta-titulo">
+      <h2>Datos del paciente</h2>
+      <div class="ejemplos" aria-label="Cargar datos de ejemplo">
+        <span>Cargar ejemplo:</span>
+        {% for estado in ejemplos %}
+          <button type="button" class="boton-ejemplo" data-estado="{{ estado }}">{{ estado|capitalize }}</button>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if errores %}
+      <div class="alerta-error" role="alert">
+        <strong>Revise los datos ingresados:</strong>
+        <ul>{% for error in errores %}<li>{{ error }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('inicio') }}" id="formulario">
+      <div class="campos">
+        {% for nombre, v in variables.items() %}
+          <label class="campo" for="{{ nombre }}">
+            <span class="etiqueta">{{ v.descripcion }}</span>
+            <span class="entrada-con-unidad">
+              <input type="number" id="{{ nombre }}" name="{{ nombre }}"
+                     min="{{ v.minimo }}" max="{{ v.maximo }}" step="{{ 1 if v.entero else 0.1 }}"
+                     value="{{ valores.get(nombre, '') }}" required>
+              <span class="unidad">{{ v.unidad }}</span>
+            </span>
+            <span class="ayuda">Rango válido: {{ v.minimo }} a {{ v.maximo }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <button type="submit" class="boton-principal">Obtener predicción</button>
+    </form>
+  </section>
+
+  {% if resultado %}
+    <section class="tarjeta resultado estado-{{ clases[resultado.estado] }}" aria-live="polite">
+      <p class="resultado-etiqueta">Estado estimado</p>
+      <p class="resultado-estado">{{ resultado.estado }}</p>
+      <p class="resultado-recomendacion">{{ resultado.recomendacion }}</p>
+
+      <div class="medidor" role="img" aria-label="Puntaje de severidad {{ resultado.puntaje_severidad }} de {{ resultado.puntaje_maximo }}">
+        <div class="medidor-barra" style="width: {{ (100 * resultado.puntaje_severidad / resultado.puntaje_maximo)|round }}%"></div>
+      </div>
+      <p class="medidor-texto">Puntaje de severidad: <strong>{{ resultado.puntaje_severidad }}</strong> de {{ resultado.puntaje_maximo }}</p>
+
+      <table class="detalle">
+        <thead><tr><th>Variable</th><th>Valor</th><th>Puntaje (0-3)</th></tr></thead>
+        <tbody>
+          {% for nombre, v in variables.items() %}
+            <tr>
+              <td>{{ v.descripcion }}</td>
+              <td>{{ resultado.entrada[nombre] }} {{ v.unidad }}</td>
+              <td>
+                {% if nombre in resultado.puntajes_por_variable %}
+                  {% set p = resultado.puntajes_por_variable[nombre] %}
+                  <span class="punto p{{ p }}">{{ p }}</span>{% if p == 3 %} signo de alarma{% endif %}
+                {% else %}
+                  {{ 'crónico (90 días o más)' if resultado.entrada[nombre] >= 90 else 'menos de 90 días' }}
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="meta">ID de predicción: {{ resultado.id_prediccion }} · modelo v{{ resultado.version_modelo }}</p>
+    </section>
+  {% endif %}
+
+  <details class="tarjeta acerca">
+    <summary>¿Cómo decide el modelo?</summary>
+    <ol>
+      <li>Cada signo recibe un puntaje de 0 (normal) a 3 (alarma): temperatura, frecuencia cardiaca, saturación de oxígeno e intensidad del dolor.</li>
+      <li>Si el puntaje total es 0, el resultado es <strong>NO ENFERMO</strong>.</li>
+      <li>Si hay síntomas desde hace 90 días o más, el resultado es <strong>ENFERMEDAD CRÓNICA</strong>.</li>
+      <li>Si el puntaje total es 5 o más, o algún signo tiene puntaje 3, el resultado es <strong>ENFERMEDAD AGUDA</strong>.</li>
+      <li>En los demás casos, el resultado es <strong>ENFERMEDAD LEVE</strong>.</li>
+    </ol>
+    <p>También puede consultar el modelo como API REST con <code>POST /predecir</code>. La documentación interactiva está en <a href="{{ url_for('flasgger.apidocs') }}">/apidocs</a>.</p>
+  </details>
+</main>
+
+<footer class="contenedor pie">
+  Simulación académica (curso MLOps, Universidad Icesi). No reemplaza el criterio médico ni sirve para diagnóstico real.
+</footer>
+
+<script>
+  const EJEMPLOS = {{ ejemplos|tojson }};
+  document.querySelectorAll(".boton-ejemplo").forEach((boton) => {
+    boton.addEventListener("click", () => {
+      const datos = EJEMPLOS[boton.dataset.estado];
+      Object.entries(datos).forEach(([campo, valor]) => {
+        document.getElementById(campo).value = valor;
+      });
+    });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+# Archivos que NO se envían al contexto de construcción de la imagen
+.git
+.github
+.venv
+venv
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+ejemplos/
+registros/
+requirements-dev.txt
+pytest.ini
+docker-compose.yml
+README.md
+*.md
+.DS_Store
