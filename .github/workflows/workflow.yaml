@@ -1,0 +1,181 @@
+# =============================================================================
+# Pipeline de CI/CD del servicio de predicción de enfermedades
+#
+# Evento (a): cada pull request contra main
+#   1. Comenta en el PR: "CI/CD en acción. Ejecutando tareas …"
+#   2. Corre las pruebas unitarias del modelo y del servicio (pytest)
+#   3. Comenta en el PR: "CI/CD terminado con éxito."
+#
+# Evento (b): cada commit en main (merge de un PR; main está protegida)
+#   1. Vuelve a correr las mismas pruebas unitarias
+#   2. Construye la imagen de Docker y la publica en GitHub Packages (ghcr.io)
+# =============================================================================
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Permisos mínimos por defecto; cada job pide solo lo que necesita.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Evento (a) · Acción 1: comentario inicial en el PR
+  # ---------------------------------------------------------------------------
+  comentario-inicial:
+    name: "PR · Comentario inicial"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comentar en el PR que el pipeline comenzó
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMERO_PR: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$NUMERO_PR" --repo "$GITHUB_REPOSITORY" --body "CI/CD en acción. Ejecutando tareas …"
+
+  # ---------------------------------------------------------------------------
+  # Evento (a) · Acción 2  y  Evento (b) · Acción 1: pruebas unitarias
+  # ---------------------------------------------------------------------------
+  pruebas:
+    name: "Pruebas unitarias"
+    needs: comentario-inicial
+    # En un push a main el comentario inicial no aplica (queda "skipped") y las pruebas corren igual.
+    if: ${{ !cancelled() && needs.comentario-inicial.result != 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v7
+
+      - name: Instalar Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Instalar dependencias
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Correr las pruebas unitarias (pytest)
+        run: python -m pytest -v --junitxml=resultados-pruebas.xml
+
+      - name: Resumen de las pruebas
+        if: always()
+        run: |
+          python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import os
+          import xml.etree.ElementTree as ET
+          if os.path.exists("resultados-pruebas.xml"):
+              raiz = ET.parse("resultados-pruebas.xml").getroot()
+              s = raiz if raiz.tag == "testsuite" else raiz.find("testsuite")
+              print("### Pruebas unitarias")
+              print(f"{s.get('tests')} pruebas · {s.get('failures')} fallas · {s.get('errors')} errores · {s.get('skipped')} omitidas")
+          EOF
+
+  # ---------------------------------------------------------------------------
+  # Evento (a) · Acción 3: comentario final en el PR (solo si las pruebas pasan)
+  # ---------------------------------------------------------------------------
+  comentario-final:
+    name: "PR · Comentario final"
+    needs: pruebas
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.pruebas.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comentar en el PR que el pipeline terminó con éxito
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMERO_PR: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$NUMERO_PR" --repo "$GITHUB_REPOSITORY" --body "CI/CD terminado con éxito."
+
+  # Extra: si algo falla, también se avisa en el PR con el enlace a la ejecución.
+  comentario-fallo:
+    name: "PR · Aviso de falla"
+    needs: pruebas
+    if: github.event_name == 'pull_request' && failure()
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comentar en el PR que el pipeline falló
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMERO_PR: ${{ github.event.pull_request.number }}
+          URL_EJECUCION: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: gh pr comment "$NUMERO_PR" --repo "$GITHUB_REPOSITORY" --body "CI/CD falló. Revise el detalle en $URL_EJECUCION"
+
+  # ---------------------------------------------------------------------------
+  # Evento (b) · Acción 2: construir la imagen y publicarla en GitHub Packages
+  # ---------------------------------------------------------------------------
+  publicar-imagen:
+    name: "main · Construir y publicar imagen"
+    needs: pruebas
+    # Se evalúa el resultado de "pruebas" de forma explícita porque en un push el
+    # job "comentario-inicial" queda omitido y la condición implícita success() lo saltaría.
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.pruebas.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v7
+
+      - name: Definir el nombre y la versión de la imagen
+        run: |
+          # Paquete ghcr.io/<usuario>/prediccion-enfermedades, el mismo nombre de la imagen local.
+          # ghcr.io exige minúsculas, por eso se convierte el nombre del dueño con ${...,,}.
+          echo "IMAGEN=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/prediccion-enfermedades" >> "$GITHUB_ENV"
+          echo "VERSION=$(sed -n 's/^VERSION_SERVICIO = "\([^"]*\)".*/\1/p' app/servidor.py)" >> "$GITHUB_ENV"
+
+      - name: Iniciar sesión en GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Construir la imagen de Docker
+        run: >
+          docker build
+          --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}"
+          --label "org.opencontainers.image.revision=${{ github.sha }}"
+          -t "$IMAGEN:latest"
+          -t "$IMAGEN:$VERSION"
+          -t "$IMAGEN:sha-${GITHUB_SHA::7}"
+          .
+
+      - name: Prueba de humo del contenedor
+        run: |
+          docker run -d --name humo -p 5000:5000 "$IMAGEN:latest"
+          for i in $(seq 1 30); do curl -fs http://localhost:5000/salud && break; sleep 1; done
+          curl -fs -X POST http://localhost:5000/predecir -H "Content-Type: application/json" \
+               --data @ejemplos/5_enfermedad_terminal.json | grep -q "ENFERMEDAD TERMINAL"
+          curl -fs http://localhost:5000/estadisticas | grep -q '"total_predicciones":1'
+          docker rm -f humo
+
+      - name: Publicar la imagen en GitHub Packages
+        run: |
+          # La primera publicación crea el paquete en ghcr.io y, mientras GitHub le asigna
+          # los permisos del repositorio, puede responder "denied"; por eso se reintenta.
+          for intento in 1 2 3 4; do
+            docker push --all-tags "$IMAGEN" && exit 0
+            echo "::warning::Intento $intento de publicación fallido; se reintenta en 30 s."
+            sleep 30
+          done
+          exit 1
+
+      - name: Resumen de la publicación
+        run: |
+          {
+            echo "### Imagen publicada en GitHub Packages"
+            echo ""
+            echo "Etiquetas: \`latest\`, \`$VERSION\` y \`sha-${GITHUB_SHA::7}\`"
+            echo ""
+            echo '```bash'
+            echo "docker pull $IMAGEN:$VERSION"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
