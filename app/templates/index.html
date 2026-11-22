@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
 </head>
 <body>
-{% set clases = {'NO ENFERMO': 'sano', 'ENFERMEDAD LEVE': 'leve', 'ENFERMEDAD AGUDA': 'aguda', 'ENFERMEDAD CRÓNICA': 'cronica'} %}
+{% set clases = {'NO ENFERMO': 'sano', 'ENFERMEDAD LEVE': 'leve', 'ENFERMEDAD AGUDA': 'aguda', 'ENFERMEDAD CRÓNICA': 'cronica', 'ENFERMEDAD TERMINAL': 'terminal'} %}
 <header class="encabezado">
   <div class="contenedor">
     <h1>Asistente de predicción del estado de salud</h1>
@@ -92,7 +92,8 @@
     <ol>
       <li>Cada signo recibe un puntaje de 0 (normal) a 3 (alarma): temperatura, frecuencia cardiaca, saturación de oxígeno e intensidad del dolor.</li>
       <li>Si el puntaje total es 0, el resultado es <strong>NO ENFERMO</strong>.</li>
-      <li>Si hay síntomas desde hace 90 días o más, el resultado es <strong>ENFERMEDAD CRÓNICA</strong>.</li>
+      <li>Si hay síntomas desde hace 90 días o más y el puntaje total es 8 o más, el resultado es <strong>ENFERMEDAD TERMINAL</strong>.</li>
+      <li>Si hay síntomas desde hace 90 días o más (con puntaje menor a 8), el resultado es <strong>ENFERMEDAD CRÓNICA</strong>.</li>
       <li>Si el puntaje total es 5 o más, o algún signo tiene puntaje 3, el resultado es <strong>ENFERMEDAD AGUDA</strong>.</li>
       <li>En los demás casos, el resultado es <strong>ENFERMEDAD LEVE</strong>.</li>
     </ol>

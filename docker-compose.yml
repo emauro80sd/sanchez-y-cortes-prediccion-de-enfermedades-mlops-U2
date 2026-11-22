@@ -3,7 +3,7 @@
 services:
   prediccion:
     build: .
-    image: prediccion-enfermedades:1.0.0
+    image: prediccion-enfermedades:1.1.0
     container_name: prediccion-enfermedades
     ports:
       - "5000:5000"

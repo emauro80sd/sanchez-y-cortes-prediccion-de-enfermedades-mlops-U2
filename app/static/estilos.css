@@ -10,6 +10,7 @@
   --leve: #a86b00;
   --aguda: #b42318;
   --cronica: #6b2d8f;
+  --terminal: #3b3f46;
   --radio: 12px;
 }
 
@@ -82,6 +83,7 @@ body {
 .estado-leve { --color-estado: var(--leve); }
 .estado-aguda { --color-estado: var(--aguda); }
 .estado-cronica { --color-estado: var(--cronica); }
+.estado-terminal { --color-estado: var(--terminal); }
 .resultado-etiqueta { margin: 0; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.8rem; color: var(--texto-suave); }
 .resultado-estado { margin: 2px 0 8px; font-size: 1.9rem; font-weight: 800; color: var(--color-estado); }
 .resultado-recomendacion { margin: 0 0 16px; }

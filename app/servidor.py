@@ -6,7 +6,7 @@ Rutas:
     POST /            Procesa el formulario y muestra el resultado
     POST /predecir    API REST: recibe JSON y retorna el estado del paciente
     GET  /predecir    API REST: igual que POST, con parámetros en la URL
-    GET  /ejemplos    Datos de ejemplo que producen cada uno de los 4 estados
+    GET  /ejemplos    Datos de ejemplo que producen cada uno de los 5 estados
     GET  /salud       Health check (lo usa el HEALTHCHECK del Dockerfile)
     GET  /apidocs     Documentación interactiva (Swagger UI)
 """
@@ -43,7 +43,7 @@ app.config["SWAGGER"] = {
     "uiversion": 3,
     "description": (
         "Servicio que simula un modelo de ML: recibe 5 valores clínicos y retorna "
-        "NO ENFERMO, ENFERMEDAD LEVE, ENFERMEDAD AGUDA o ENFERMEDAD CRÓNICA. "
+        "NO ENFERMO, ENFERMEDAD LEVE, ENFERMEDAD AGUDA, ENFERMEDAD CRÓNICA o ENFERMEDAD TERMINAL. "
         "Simulación académica, no apta para uso clínico real."
     ),
     "version": VERSION_MODELO,
@@ -175,7 +175,7 @@ def predecir_post():
         properties:
           estado:
             type: string
-            enum: [NO ENFERMO, ENFERMEDAD LEVE, ENFERMEDAD AGUDA, ENFERMEDAD CRÓNICA]
+            enum: [NO ENFERMO, ENFERMEDAD LEVE, ENFERMEDAD AGUDA, ENFERMEDAD CRÓNICA, ENFERMEDAD TERMINAL]
           puntaje_severidad:
             type: integer
           puntaje_maximo:
@@ -232,7 +232,7 @@ def predecir_get():
 
 @app.get("/ejemplos")
 def ejemplos():
-    """Datos de ejemplo que producen cada uno de los 4 estados
+    """Datos de ejemplo que producen cada uno de los 5 estados
     ---
     tags:
       - Utilidades

@@ -9,6 +9,7 @@ from app.modelo import (
     ENFERMEDAD_AGUDA,
     ENFERMEDAD_CRONICA,
     ENFERMEDAD_LEVE,
+    ENFERMEDAD_TERMINAL,
     ESTADOS,
     NO_ENFERMO,
     ErrorValidacion,
@@ -24,15 +25,41 @@ def paciente(**cambios):
     return base
 
 
-# --- La función puede retornar cada uno de los 4 estados ---------------------
+# --- La función puede retornar cada uno de los 5 estados ---------------------
 @pytest.mark.parametrize("estado_esperado", ESTADOS)
 def test_cada_estado_tiene_un_ejemplo_que_lo_produce(estado_esperado):
     assert predecir_estado(**EJEMPLOS[estado_esperado]) == estado_esperado
 
 
-def test_los_cuatro_estados_son_alcanzables():
+def test_los_cinco_estados_son_alcanzables():
     obtenidos = {predecir_estado(**datos) for datos in EJEMPLOS.values()}
+    assert len(ESTADOS) == 5
     assert obtenidos == set(ESTADOS)
+
+
+# --- Nueva categoría: ENFERMEDAD TERMINAL -----------------------------------
+def test_paciente_cronico_con_compromiso_severo_es_terminal():
+    # 240 días con síntomas; temperatura 38.9 (2), FC 132 (2), SpO2 84 (3), dolor 9 (3) => total 10
+    resultado = evaluar_paciente(EJEMPLOS[ENFERMEDAD_TERMINAL])
+    assert resultado["estado"] == ENFERMEDAD_TERMINAL
+    assert resultado["puntaje_severidad"] == 10
+    assert "paliativos" in resultado["recomendacion"]
+
+
+def test_limite_terminal_puntaje_7_es_cronica_y_8_es_terminal():
+    # temperatura 39.6 (3) + SpO2 86 (3) + FC 105 (1) => total 7
+    cronica = evaluar_paciente(paciente(temperatura=39.6, saturacion_oxigeno=86, frecuencia_cardiaca=105, dias_sintomas=120))
+    assert (cronica["puntaje_severidad"], cronica["estado"]) == (7, ENFERMEDAD_CRONICA)
+    # + dolor 2 (1) => total 8
+    terminal = evaluar_paciente(paciente(temperatura=39.6, saturacion_oxigeno=86, frecuencia_cardiaca=105,
+                                         intensidad_dolor=2, dias_sintomas=120))
+    assert (terminal["puntaje_severidad"], terminal["estado"]) == (8, ENFERMEDAD_TERMINAL)
+
+
+def test_compromiso_severo_sin_cronicidad_es_aguda_no_terminal():
+    # Mismos signos que el ejemplo terminal, pero solo 10 días de evolución.
+    resultado = evaluar_paciente({**EJEMPLOS[ENFERMEDAD_TERMINAL], "dias_sintomas": 10})
+    assert resultado["estado"] == ENFERMEDAD_AGUDA
 
 
 # --- Reglas de decisión y casos límite ------------------------------------

@@ -31,7 +31,7 @@ Este repositorio mantiene el **control de versiones** de esa solución y su evol
 
 # Servicio de predicción del estado de salud del paciente (Docker)
 
-Imagen de Docker con un **modelo simulado**. A partir de 5 datos clínicos del paciente, el servicio retorna uno de estos 4 estados:
+Imagen de Docker con un **modelo simulado**. A partir de 5 datos clínicos del paciente, el servicio retorna uno de estos 5 estados:
 
 | Estado | Significado |
 |---|---|
@@ -39,6 +39,7 @@ Imagen de Docker con un **modelo simulado**. A partir de 5 datos clínicos del p
 | `ENFERMEDAD LEVE` | Hallazgos leves, de corta duración |
 | `ENFERMEDAD AGUDA` | Hallazgos severos o signos de alarma, de corta duración |
 | `ENFERMEDAD CRÓNICA` | Síntomas persistentes durante 90 días o más |
+| `ENFERMEDAD TERMINAL` | Síntomas persistentes (90 días o más) con compromiso severo de varios signos a la vez *(nueva categoría, modelo v1.1.0)* |
 
 ## 1. Finalidad de la solución
 
@@ -74,6 +75,7 @@ Cada predicción se registra con un identificador único (trazabilidad). Esos re
 │   ├── 2_enfermedad_leve.json
 │   ├── 3_enfermedad_aguda.json
 │   ├── 4_enfermedad_cronica.json
+│   ├── 5_enfermedad_terminal.json
 │   ├── probar_api.sh               # Prueba los ejemplos (Linux / macOS / Git Bash)
 │   └── probar_api.ps1              # Prueba los ejemplos (Windows PowerShell)
 └── tests/
@@ -109,9 +111,12 @@ Los 5 campos son obligatorios. Si alguno falta o está fuera de rango, el servic
 **Paso 2.** Con el puntaje total (de 0 a 12) y los días con síntomas, se aplican estas reglas en orden:
 
 1. Si el puntaje total es **0**, el estado es **`NO ENFERMO`**.
-2. Si hay síntomas desde hace **90 días o más**, el estado es **`ENFERMEDAD CRÓNICA`**. Si además hay signos de alarma, la recomendación lo advierte.
-3. Si el puntaje total es **5 o más**, o algún signo tiene puntaje **3**, el estado es **`ENFERMEDAD AGUDA`**.
-4. En cualquier otro caso, el estado es **`ENFERMEDAD LEVE`**.
+2. Si hay síntomas desde hace **90 días o más** y el puntaje total es **8 o más**, el estado es **`ENFERMEDAD TERMINAL`**: es un cuadro persistente con compromiso severo de varios signos a la vez.
+3. Si hay síntomas desde hace **90 días o más** (con puntaje menor a 8), el estado es **`ENFERMEDAD CRÓNICA`**. Si además hay signos de alarma, la recomendación lo advierte.
+4. Si el puntaje total es **5 o más**, o algún signo tiene puntaje **3**, el estado es **`ENFERMEDAD AGUDA`**.
+5. En cualquier otro caso, el estado es **`ENFERMEDAD LEVE`**.
+
+> En una solución real, agregar la categoría `ENFERMEDAD TERMINAL` implicaría re-entrenar el modelo con datos etiquetados de esa clase. En esta simulación basta con la nueva regla 2 de la función.
 
 ### 3.3 Ejemplos que producen cada estado
 
@@ -121,6 +126,7 @@ Los 5 campos son obligatorios. Si alguno falta o está fuera de rango, el servic
 | `2_enfermedad_leve.json` | 37,9 | 92 | 97 | 3 | 2 | 2 | **ENFERMEDAD LEVE** |
 | `3_enfermedad_aguda.json` | 39,8 | 128 | 89 | 8 | 3 | 10 | **ENFERMEDAD AGUDA** |
 | `4_enfermedad_cronica.json` | 37,0 | 84 | 95 | 5 | 180 | 2 | **ENFERMEDAD CRÓNICA** |
+| `5_enfermedad_terminal.json` | 38,9 | 132 | 84 | 9 | 240 | 10 | **ENFERMEDAD TERMINAL** |
 
 ### 3.4 Uso directo de la función (Python)
 
@@ -159,10 +165,10 @@ No hace falta instalar Python: todo corre dentro del contenedor.
 ## 5. Construir la imagen (`docker build`)
 
 ```bash
-docker build -t prediccion-enfermedades:1.0.0 .
+docker build -t prediccion-enfermedades:1.1.0 .
 ```
 
-* `-t prediccion-enfermedades:1.0.0` le da a la imagen un nombre y una versión.
+* `-t prediccion-enfermedades:1.1.0` le da a la imagen un nombre y una versión.
 * El `.` final indica que el contexto de construcción es la carpeta actual.
 
 Para verificar que la imagen existe:
@@ -185,7 +191,7 @@ docker images prediccion-enfermedades
 ## 6. Correr el contenedor (`docker run`)
 
 ```bash
-docker run -d --name prediccion-enfermedades -p 5000:5000 prediccion-enfermedades:1.0.0
+docker run -d --name prediccion-enfermedades -p 5000:5000 prediccion-enfermedades:1.1.0
 ```
 
 * `-d` corre el contenedor en segundo plano.
@@ -209,13 +215,13 @@ docker logs -f prediccion-enfermedades
 * **El puerto 5000 está ocupado** (en macOS suele usarlo AirPlay). Use otro puerto del equipo, por ejemplo 8080, y abra `http://localhost:8080`:
 
     ```bash
-    docker run -d --name prediccion-enfermedades -p 8080:5000 prediccion-enfermedades:1.0.0
+    docker run -d --name prediccion-enfermedades -p 8080:5000 prediccion-enfermedades:1.1.0
     ```
 
 * **Conservar el registro de predicciones** aunque se elimine el contenedor (volumen de Docker):
 
     ```bash
-    docker run -d --name prediccion-enfermedades -p 5000:5000 -v registros_prediccion:/app/registros prediccion-enfermedades:1.0.0
+    docker run -d --name prediccion-enfermedades -p 5000:5000 -v registros_prediccion:/app/registros prediccion-enfermedades:1.1.0
     ```
 
 ### Alternativa: Docker Compose (construye y corre en un solo paso)
@@ -274,7 +280,7 @@ curl -X POST http://localhost:5000/predecir -H "Content-Type: application/json" 
   "signos_de_alarma": ["temperatura", "intensidad_dolor"],
   "recomendacion": "Cuadro agudo con signos de severidad. Requiere valoración médica prioritaria y considerar atención de urgencias.",
   "entrada": {"temperatura": 39.8, "frecuencia_cardiaca": 128, "saturacion_oxigeno": 89, "intensidad_dolor": 8, "dias_sintomas": 3},
-  "version_modelo": "1.0.0",
+  "version_modelo": "1.1.0",
   "id_prediccion": "cfd8952e-7bad-4e83-bd7d-1ed8cdb5b042"
 }
 ```
@@ -324,6 +330,7 @@ Salida esperada (PowerShell):
 2_enfermedad_leve.json       -> ENFERMEDAD LEVE      (puntaje 2/12)
 3_enfermedad_aguda.json      -> ENFERMEDAD AGUDA     (puntaje 10/12)
 4_enfermedad_cronica.json    -> ENFERMEDAD CRÓNICA   (puntaje 2/12)
+5_enfermedad_terminal.json   -> ENFERMEDAD TERMINAL  (puntaje 10/12)
 ```
 
 ### 7.6 Resumen de endpoints
@@ -360,10 +367,10 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -v
 ```
 
-Las 42 pruebas verifican lo siguiente:
+Las 47 pruebas verifican lo siguiente:
 
-* Que la función retorne **cada uno de los estados**.
-* Los casos límite: 89 frente a 90 días, y puntaje 4 frente a 5.
+* Que la función retorne **cada uno de los 5 estados**.
+* Los casos límite: 89 frente a 90 días, puntaje 4 frente a 5 (aguda) y puntaje 7 frente a 8 (terminal).
 * La validación de las entradas.
 * Las respuestas de la web, la API, el registro y Swagger.
 
@@ -390,7 +397,7 @@ docker rm prediccion-enfermedades
 Eliminar la imagen (opcional):
 
 ```bash
-docker rmi prediccion-enfermedades:1.0.0
+docker rmi prediccion-enfermedades:1.1.0
 ```
 
 ## 11. Solución de problemas
