@@ -10,6 +10,10 @@
 {% set clases = {'NO ENFERMO': 'sano', 'ENFERMEDAD LEVE': 'leve', 'ENFERMEDAD AGUDA': 'aguda', 'ENFERMEDAD CRÓNICA': 'cronica', 'ENFERMEDAD TERMINAL': 'terminal'} %}
 <header class="encabezado">
   <div class="contenedor">
+    <nav class="navegacion" aria-label="Navegación principal">
+      <a href="{{ url_for('inicio') }}" class="activo" aria-current="page">Predicción</a>
+      <a href="{{ url_for('reporte') }}">Reporte de predicciones</a>
+    </nav>
     <h1>Asistente de predicción del estado de salud</h1>
     <p>Ingrese los datos del paciente para obtener el estado estimado por el modelo (versión {{ version }}).</p>
   </div>

@@ -47,8 +47,9 @@ Es un prototipo del componente **«Servicio de predicción»** del pipeline de M
 
 * **Página web** (`http://localhost:5000`): un formulario donde el médico ingresa los datos y ve el estado, la recomendación y la explicación del resultado.
 * **API REST** (`POST /predecir`): para integrarlo con otros sistemas, como una historia clínica electrónica. Tiene documentación interactiva Swagger en `/apidocs`.
+* **Reporte de predicciones** (`/reporte` en el navegador o `GET /estadisticas` en JSON): estadísticas de todas las predicciones realizadas (ver la sección 8).
 
-Cada predicción se registra con un identificador único (trazabilidad). Esos registros son los datos que alimentarían el monitoreo y el re-entrenamiento del pipeline de MLOps.
+Cada predicción se registra con un identificador único (trazabilidad). Esos registros alimentan el reporte de estadísticas, y en una solución real también el monitoreo y el re-entrenamiento del pipeline de MLOps.
 
 ## 2. Estructura del repositorio
 
@@ -65,9 +66,11 @@ Cada predicción se registra con un identificador único (trazabilidad). Esos re
 ├── app/
 │   ├── __init__.py
 │   ├── modelo.py           # ★ Función del modelo simulado (predecir_estado / evaluar_paciente)
-│   ├── servidor.py         # Servicio Flask: web, API REST, Swagger y health check
+│   ├── estadisticas.py     # Reporte de estadísticas a partir del registro de predicciones
+│   ├── servidor.py         # Servicio Flask: web, API REST, reporte, Swagger y health check
 │   ├── templates/
-│   │   └── index.html      # Formulario web para el médico
+│   │   ├── index.html      # Formulario web para el médico
+│   │   └── reporte.html    # Página con el reporte de predicciones
 │   └── static/
 │       └── estilos.css     # Estilos de la página
 ├── ejemplos/
@@ -80,7 +83,8 @@ Cada predicción se registra con un identificador único (trazabilidad). Esos re
 │   └── probar_api.ps1              # Prueba los ejemplos (Windows PowerShell)
 └── tests/
     ├── test_modelo.py      # Pruebas de la función (estados, límites y validaciones)
-    └── test_api.py         # Pruebas de integración de la web y la API
+    ├── test_api.py         # Pruebas de integración de la web y la API
+    └── test_estadisticas.py  # Pruebas del reporte de estadísticas
 ```
 
 ## 3. El modelo simulado
@@ -165,10 +169,10 @@ No hace falta instalar Python: todo corre dentro del contenedor.
 ## 5. Construir la imagen (`docker build`)
 
 ```bash
-docker build -t prediccion-enfermedades:1.1.0 .
+docker build -t prediccion-enfermedades:1.2.0 .
 ```
 
-* `-t prediccion-enfermedades:1.1.0` le da a la imagen un nombre y una versión.
+* `-t prediccion-enfermedades:1.2.0` le da a la imagen un nombre y una versión.
 * El `.` final indica que el contexto de construcción es la carpeta actual.
 
 Para verificar que la imagen existe:
@@ -191,7 +195,7 @@ docker images prediccion-enfermedades
 ## 6. Correr el contenedor (`docker run`)
 
 ```bash
-docker run -d --name prediccion-enfermedades -p 5000:5000 prediccion-enfermedades:1.1.0
+docker run -d --name prediccion-enfermedades -p 5000:5000 prediccion-enfermedades:1.2.0
 ```
 
 * `-d` corre el contenedor en segundo plano.
@@ -215,13 +219,13 @@ docker logs -f prediccion-enfermedades
 * **El puerto 5000 está ocupado** (en macOS suele usarlo AirPlay). Use otro puerto del equipo, por ejemplo 8080, y abra `http://localhost:8080`:
 
     ```bash
-    docker run -d --name prediccion-enfermedades -p 8080:5000 prediccion-enfermedades:1.1.0
+    docker run -d --name prediccion-enfermedades -p 8080:5000 prediccion-enfermedades:1.2.0
     ```
 
 * **Conservar el registro de predicciones** aunque se elimine el contenedor (volumen de Docker):
 
     ```bash
-    docker run -d --name prediccion-enfermedades -p 5000:5000 -v registros_prediccion:/app/registros prediccion-enfermedades:1.1.0
+    docker run -d --name prediccion-enfermedades -p 5000:5000 -v registros_prediccion:/app/registros prediccion-enfermedades:1.2.0
     ```
 
 ### Alternativa: Docker Compose (construye y corre en un solo paso)
@@ -331,7 +335,16 @@ Salida esperada (PowerShell):
 3_enfermedad_aguda.json      -> ENFERMEDAD AGUDA     (puntaje 10/12)
 4_enfermedad_cronica.json    -> ENFERMEDAD CRÓNICA   (puntaje 2/12)
 5_enfermedad_terminal.json   -> ENFERMEDAD TERMINAL  (puntaje 10/12)
+
+Reporte: 5 predicciones en total; la última fue el 2026-11-22T15:55:23+00:00
+  NO ENFERMO             1
+  ENFERMEDAD LEVE        1
+  ENFERMEDAD AGUDA       1
+  ENFERMEDAD CRÓNICA     1
+  ENFERMEDAD TERMINAL    1
 ```
+
+Al final, los dos scripts muestran también el reporte de estadísticas (sección 8).
 
 ### 7.6 Resumen de endpoints
 
@@ -342,18 +355,77 @@ Salida esperada (PowerShell):
 | `POST` | `/predecir` | Predicción con un cuerpo JSON (también acepta datos de formulario) |
 | `GET` | `/predecir?...` | Predicción con parámetros en la URL |
 | `GET` | `/ejemplos` | Un ejemplo de entrada por cada estado |
+| `GET` | `/estadisticas` | Reporte de estadísticas de las predicciones (JSON) |
+| `GET` | `/reporte` | Reporte de estadísticas en una página web |
 | `GET` | `/salud` | Health check, que usa el `HEALTHCHECK` de Docker |
 | `GET` | `/apidocs` | Documentación Swagger UI |
 
-## 8. Registro de predicciones (trazabilidad)
+## 8. Reporte de estadísticas de las predicciones
 
-Cada predicción se escribe como una línea JSON en los logs del contenedor y en `/app/registros/predicciones.jsonl`. Cada línea incluye el id, la fecha, el canal (web o API), la versión del modelo, la entrada y el estado.
+### 8.1 Cómo se exportan las predicciones
+
+Cada predicción, hecha desde la web o desde la API, se exporta como una línea JSON a un archivo de texto: `/app/registros/predicciones.jsonl` dentro del contenedor. La ruta se puede cambiar con la variable de entorno `RUTA_REGISTRO_PREDICCIONES`. Cada línea incluye el id, la fecha (UTC), el canal (web o API), la versión del modelo, la entrada y el estado. La misma línea también aparece en los logs del contenedor.
 
 Para consultar el archivo:
 
 ```bash
 docker exec prediccion-enfermedades cat /app/registros/predicciones.jsonl
 ```
+
+### 8.2 Cómo obtener el reporte
+
+El servicio lee ese archivo y entrega lo que necesitan los médicos:
+
+* **Número total de predicciones por cada categoría** (las 5, incluidas las que están en 0).
+* **Últimas 5 predicciones realizadas**, de la más reciente a la más antigua.
+* **Fecha de la última predicción.**
+
+Hay dos formas de consultarlo:
+
+* **En el navegador:** abra **http://localhost:5000/reporte**, o use el enlace «Reporte de predicciones» de la página principal.
+* **Por API**, en JSON:
+
+    ```bash
+    curl http://localhost:5000/estadisticas
+    ```
+
+    En PowerShell:
+
+    ```powershell
+    Invoke-RestMethod http://localhost:5000/estadisticas
+    ```
+
+**Respuesta (HTTP 200), resumida:**
+
+```json
+{
+  "total_predicciones": 6,
+  "predicciones_por_categoria": {
+    "NO ENFERMO": 1,
+    "ENFERMEDAD LEVE": 1,
+    "ENFERMEDAD AGUDA": 2,
+    "ENFERMEDAD CRÓNICA": 1,
+    "ENFERMEDAD TERMINAL": 1
+  },
+  "ultimas_predicciones": [
+    {
+      "id_prediccion": "9b1c...",
+      "fecha_utc": "2026-11-22T15:04:05+00:00",
+      "canal": "api",
+      "version_modelo": "1.1.0",
+      "entrada": {"temperatura": 38.9, "frecuencia_cardiaca": 132, "saturacion_oxigeno": 84, "intensidad_dolor": 9, "dias_sintomas": 240},
+      "estado": "ENFERMEDAD TERMINAL",
+      "puntaje_severidad": 10
+    }
+  ],
+  "fecha_ultima_prediccion": "2026-11-22T15:04:05+00:00",
+  "lineas_invalidas": 0
+}
+```
+
+Si todavía no se ha hecho ninguna predicción, el reporte retorna sus valores por defecto: conteos en 0, `ultimas_predicciones` vacía y `fecha_ultima_prediccion` en `null`.
+
+> El registro vive dentro del contenedor. Para conservarlo aunque se elimine el contenedor, corra el contenedor con el volumen `-v registros_prediccion:/app/registros` (sección 6) o use `docker compose`, que ya lo incluye.
 
 ## 9. Pruebas automáticas (opcional, sin Docker)
 
@@ -367,12 +439,18 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -v
 ```
 
-Las 47 pruebas verifican lo siguiente:
+Las 56 pruebas verifican lo siguiente:
 
 * Que la función retorne **cada uno de los 5 estados**.
 * Los casos límite: 89 frente a 90 días, puntaje 4 frente a 5 (aguda) y puntaje 7 frente a 8 (terminal).
 * La validación de las entradas.
 * Las respuestas de la web, la API, el registro y Swagger.
+* El reporte de estadísticas:
+    * Está vacío antes de cualquier predicción.
+    * La última predicción del reporte es la esperada.
+    * Los conteos por categoría son correctos.
+    * Solo trae las últimas 5 predicciones.
+    * Ignora las líneas dañadas del registro.
 
 Para correr el servicio sin Docker (solo en desarrollo):
 
@@ -397,7 +475,7 @@ docker rm prediccion-enfermedades
 Eliminar la imagen (opcional):
 
 ```bash
-docker rmi prediccion-enfermedades:1.1.0
+docker rmi prediccion-enfermedades:1.2.0
 ```
 
 ## 11. Solución de problemas

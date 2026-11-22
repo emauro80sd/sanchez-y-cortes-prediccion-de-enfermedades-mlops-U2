@@ -14,3 +14,7 @@ for archivo in "$DIR"/*.json; do
        --data @"$archivo"
   echo
 done
+
+echo "== Reporte de estadísticas (GET /estadisticas)"
+curl -s "$URL/estadisticas"
+echo
