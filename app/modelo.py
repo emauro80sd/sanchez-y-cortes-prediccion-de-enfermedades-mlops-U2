@@ -3,16 +3,17 @@ Modelo simulado para predecir el estado de salud de un paciente.
 
 No es un modelo de ML entrenado: es una función basada en reglas que imita
 la salida del modelo real descrito en el pipeline de la Parte 1. Recibe 5
-valores clínicos y retorna uno de 4 estados:
+valores clínicos y retorna uno de 5 estados:
 
-    NO ENFERMO | ENFERMEDAD LEVE | ENFERMEDAD AGUDA | ENFERMEDAD CRÓNICA
+    NO ENFERMO | ENFERMEDAD LEVE | ENFERMEDAD AGUDA | ENFERMEDAD CRÓNICA | ENFERMEDAD TERMINAL
 
 Lógica de decisión:
     1. Cada signo o síntoma recibe un puntaje de 0 (normal) a 3 (alarma).
-    2. Puntaje total = 0             -> NO ENFERMO
-    3. Síntomas por >= 90 días       -> ENFERMEDAD CRÓNICA
-    4. Total >= 5 o algún puntaje 3  -> ENFERMEDAD AGUDA
-    5. En otro caso                  -> ENFERMEDAD LEVE
+    2. Puntaje total = 0                        -> NO ENFERMO
+    3. Síntomas por >= 90 días y total >= 8     -> ENFERMEDAD TERMINAL
+    4. Síntomas por >= 90 días                  -> ENFERMEDAD CRÓNICA
+    5. Total >= 5 o algún puntaje 3             -> ENFERMEDAD AGUDA
+    6. En otro caso                             -> ENFERMEDAD LEVE
 
 AVISO: es una simulación con fines académicos. No sirve como diagnóstico médico.
 """
@@ -22,19 +23,23 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping
 
-VERSION_MODELO = "1.0.0"
+VERSION_MODELO = "1.1.0"  # 1.1.0: nueva categoría ENFERMEDAD TERMINAL
 
 NO_ENFERMO = "NO ENFERMO"
 ENFERMEDAD_LEVE = "ENFERMEDAD LEVE"
 ENFERMEDAD_AGUDA = "ENFERMEDAD AGUDA"
 ENFERMEDAD_CRONICA = "ENFERMEDAD CRÓNICA"
+ENFERMEDAD_TERMINAL = "ENFERMEDAD TERMINAL"
 
-ESTADOS = (NO_ENFERMO, ENFERMEDAD_LEVE, ENFERMEDAD_AGUDA, ENFERMEDAD_CRONICA)
+ESTADOS = (NO_ENFERMO, ENFERMEDAD_LEVE, ENFERMEDAD_AGUDA, ENFERMEDAD_CRONICA, ENFERMEDAD_TERMINAL)
 
 # Desde cuántos días con síntomas se considera crónica la enfermedad (3 meses).
 DIAS_CRONICIDAD = 90
 # Puntaje total desde el cual el cuadro se considera agudo.
 UMBRAL_AGUDA = 5
+# Puntaje total desde el cual una enfermedad crónica se considera terminal
+# (compromiso severo de varios signos a la vez en un cuadro persistente).
+UMBRAL_TERMINAL = 8
 # Puntaje de una variable que se considera signo de alarma.
 PUNTAJE_ALARMA = 3
 
@@ -90,6 +95,11 @@ RECOMENDACIONES = {
     ENFERMEDAD_CRONICA: (
         "Síntomas persistentes (90 días o más). Estudiar una posible enfermedad "
         "crónica o huérfana y considerar remitir al especialista."
+    ),
+    ENFERMEDAD_TERMINAL: (
+        "Enfermedad crónica avanzada con compromiso severo de varios signos. "
+        "Remitir de forma prioritaria al especialista y valorar el ingreso a "
+        "cuidados paliativos, acordando el plan de atención con el paciente y su familia."
     ),
 }
 
@@ -208,7 +218,7 @@ def predecir_estado(
     intensidad_dolor: float,
     dias_sintomas: float,
 ) -> str:
-    """Retorna el estado del paciente: NO ENFERMO, ENFERMEDAD LEVE, AGUDA o CRÓNICA.
+    """Retorna el estado del paciente: NO ENFERMO o ENFERMEDAD LEVE, AGUDA, CRÓNICA o TERMINAL.
 
     Ejemplo:
         >>> predecir_estado(36.8, 72, 98, 0, 0)
@@ -242,6 +252,8 @@ def evaluar_paciente(datos: Mapping[str, Any]) -> dict[str, Any]:
 
     if total == 0:
         estado = NO_ENFERMO
+    elif x["dias_sintomas"] >= DIAS_CRONICIDAD and total >= UMBRAL_TERMINAL:
+        estado = ENFERMEDAD_TERMINAL
     elif x["dias_sintomas"] >= DIAS_CRONICIDAD:
         estado = ENFERMEDAD_CRONICA
     elif total >= UMBRAL_AGUDA or signos_alarma:
@@ -265,7 +277,7 @@ def evaluar_paciente(datos: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-# Ejemplos de entrada que producen cada uno de los 4 estados (los usan la web, la API y las pruebas).
+# Ejemplos de entrada que producen cada uno de los 5 estados (los usan la web, la API y las pruebas).
 EJEMPLOS: dict[str, dict[str, float]] = {
     NO_ENFERMO: {
         "temperatura": 36.8,
@@ -294,5 +306,12 @@ EJEMPLOS: dict[str, dict[str, float]] = {
         "saturacion_oxigeno": 95,
         "intensidad_dolor": 5,
         "dias_sintomas": 180,
+    },
+    ENFERMEDAD_TERMINAL: {
+        "temperatura": 38.9,
+        "frecuencia_cardiaca": 132,
+        "saturacion_oxigeno": 84,
+        "intensidad_dolor": 9,
+        "dias_sintomas": 240,
     },
 }
